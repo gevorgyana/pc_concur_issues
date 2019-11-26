@@ -20,7 +20,33 @@
  * 2) check successful? yield
  * 3) sleep
  *
- * deadlock verification: TODO
+ * it is possible to run he pogram in
+ * deadlock verification mode:
+ * this is not enough, but still must hold
+ * when a deadlock is present
+ * do the following; when a thread enters critical region,
+ * mark that we are now using the resource (buffer as a whole);
+ * when we exit, we remove the flag;
+ * when the other process exits, they too print the flag;
+ * sumup:
+ * every process does a print satement; when they hang, we see it (? it it okay?)
+ * for formal verification we need a third party, observer()
+ * observer will look and see the flags and watch out for
+ * a case when a cycle appears;
+
+ * example:
+ * A sets request info - to a special store
+ * B sets request info - to a special store
+ * observer runs periodically and checks buffers,
+ * when it sees the sign of deadlock, it reports
+ * "DEADLOCK HAS BEEN ENCOUNTERED"
+
+ * bullshi ^
+ *         \
+
+ * Чтобы проверить, есть ли делок, достаточно в этой задаче
+ * проверить условие: (проодюсер хранит  count N, consumer - count 0)
+ *
  *
  * TODO use thread-safe circular buffer? is it good in this case?
  * TODO implement demonstrational test;
