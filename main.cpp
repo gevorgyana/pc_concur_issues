@@ -54,14 +54,53 @@
  * automate this process and plot average values;
  */
 
+// Идейно мы расслоили присваивания на 2 слоя - глобальный и специфичный для
+// потока
+
+#define N 10
+int count = 0;
+
 class PCDeadlockSimulator {
-  void produce() {
+ public:
+  void Run()
+  {
 
   }
 
-  void consume() {
+ private:
+  void Produce()
+  {
+    while (true)
+    {
+      producer_snapshot_counter_value_ = global_counter_value;
+      if (producer_snapshot_counter_value_ == N)
+      {
+        // cv.wait()
+      }
+      ++global_counter_value;
+      producer_snapshot_counter_value = global_counter_value;
+      if (producer_snapshow_counter)
+    }
+  }
+
+  void Consume()
+  {
 
   }
+
+  void Observe()
+  {
+    while (true)
+    {
+      if (producer_current_value_ == N && consumer_current_value_ == 0)
+      {
+        std::cout << "Deadlock detected. Shutting down..." << std::endl;
+      }
+    }
+  }
+
+  int producer_snapshot_counter_value_;
+  int consumer_snapshot_counter_value_;
 };
 
 void tst1_app_runs() {
