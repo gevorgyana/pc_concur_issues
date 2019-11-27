@@ -40,6 +40,19 @@
 std::vector<std::thread> = {std::thread(***)}
  */
 
+/**
+ * Если все будут пользоваться одним мутексом, то
+ * когда произойдет дедлок, никто его не освободит.
+ * Тогда и сам наблюдатель тоже будет наблокирован
+ * Решение: наблюдатель не может пользоваться мутексом.
+ * Пускай просто смотрит на атомарные переменные-кеши
+ * (они должны быть атомарные, чтобы наблюдатель мог
+ * за ними наблюдать); как только наблдатель словил
+ * неправильное состояние, он выводит сообщение
+
+ * проблема: наблюдатель делает false positive
+ */
+
 class PCDeadlockSimulator {
  public:
   void Run()
@@ -47,7 +60,7 @@ class PCDeadlockSimulator {
     std::vector <std::thread> threads(3);
     threads[0] = std::thread(&PCDeadlockSimulator::ProduceSafe, this);
     threads[1] = std::thread(&PCDeadlockSimulator::ConsumeSafe, this);
-    //threads[2] = std::thread(&PCDeadlockSimulator::Observe, this);
+    threads[2] = std::thread(&PCDeadlockSimulator::Observe, this);
 
     for (auto& thread: threads)
     {
@@ -58,8 +71,12 @@ class PCDeadlockSimulator {
  private:
   std::condition_variable condvar_;
   std::mutex mutex_;
-  std::atomic_bool flag_{false};
-  std::atomic<int> global_counter_value_{0};
+  bool consumed_,
+    produced_;
+  std::atomic<int> global_counter_value_{0},
+    consumer_snap_counter_{0},
+    producer_snap_counter_{0};
+  std::mutex counter_access_mutex_;
 
   void ProduceSafe()
   {
@@ -73,14 +90,23 @@ class PCDeadlockSimulator {
       }
 
       // process shared data
-      int prev = global_counter_value_++;
-      spdlog::info("producer incremented {} -> {}", prev, global_counter_value_);
+      {
+        std::unique_lock<std::mutex> l(counter_access_mutex_);
+        int prev = global_counter_value_++;
+        producer_snap_counter_ = global_counter_value_;
+        //produced_ |= true;
+        spdlog::info("producer incremented {} -> {}", prev, global_counter_value_);
+      }
 
-      // if needed, wake up the pther one
-      if (global_counter_value_)
+      // if needed, wake up the other one
+
+      std::unique_lock<std::mutex> l(counter_access_mutex_);
+      if (global_counter_value_ == 1)
       {
         condvar_.notify_one();
       }
+
+
     }
   }
 
@@ -89,22 +115,59 @@ class PCDeadlockSimulator {
     while (true)
     {
       // no data -> sleep
+
+      std::unique_lock<std::mutex> l(counter_access_mutex_);
       if (global_counter_value_ == 0)
       {
         std::unique_lock <std::mutex>l(mutex_);
         condvar_.wait(l);
       }
 
+
       // process shared data
-      int prev = global_counter_value_--;
-      spdlog::info("consumer decremented {} -> {}", prev, global_counter_value_);
+      {
+        std::unique_lock<std::mutex> l(counter_access_mutex_);
+        int prev = global_counter_value_--;
+        consumer_snap_counter_ = global_counter_value_;
+        //consumed_ |= true;
+        spdlog::info("consumer decremented {} -> {}", prev, global_counter_value_);
+      }
 
       // if needed wake up the other one
+
+      std::unique_lock<std::mutex> l(counter_access_mutex_);
       if (global_counter_value_ == N - 1)
       {
         condvar_.notify_one();
       }
+
     }
+  }
+
+  void Observe()
+  {
+    // TODO native handle cppref to terminate threads - unix only - compiler defined option
+    while (true)
+    {
+
+      // проблема: как сделать так, чтобы одновременно получить доступ к двум
+      // переменным. вероятно, проблема в этом, и не нужны флаги.
+      if ((producer_snap_counter_ != N || consumer_snap_counter_ != 0) /*||
+          !(produced_ && consumed_)*/)
+      {
+        spdlog::info("blank shot");
+        // small optimization
+        std::this_thread::yield();
+        continue;
+      }
+
+      else
+        break;
+
+    }
+
+    spdlog::critical("deadlock detected");
+    return;
   }
 };
 
