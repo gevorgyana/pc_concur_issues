@@ -25,11 +25,13 @@
  * Чтобы проверить, есть ли делок, достаточно
  * проверить условие: (проодюсер хранит  count N, consumer - count 0)
  *
- * TODO use thread-safe circular buffer? is it good in this case?
- * TODO implement demonstrational test;
+ * TODO implement demonstration;
  * TODO benchmark this code; a python script to
  * automate this process and plot average values;
  */
+
+// to see item loss, there have to be values!
+// not just counter
 
 #define N 10
 
@@ -43,8 +45,8 @@ class PCDeadlockSimulator {
   void Run()
   {
     std::vector <std::thread> threads(3);
-    threads[0] = std::thread(&PCDeadlockSimulator::Produce, this);
-    threads[1] = std::thread(&PCDeadlockSimulator::Consume, this);
+    threads[0] = std::thread(&PCDeadlockSimulator::ProduceSafe, this);
+    threads[1] = std::thread(&PCDeadlockSimulator::ConsumeSafe, this);
     //threads[2] = std::thread(&PCDeadlockSimulator::Observe, this);
 
     for (auto& thread: threads)
@@ -61,11 +63,35 @@ class PCDeadlockSimulator {
   int consumer_snapshot_counter_value_{0};
   int global_counter_value_{0};
 
+  void ProduceSafe()
+  {
+    while (true)
+    {
+      // if needed to go sleep
+      if (global_counter_value_ == N)
+      {
+        std::unique_lock<std::mutex> l(mutex_);
+        condvar_.wait(l);
+      }
+
+      // process shared data
+      ++global_counter_value_;
+      spdlog::info("producer incremented {}", global_counter_value_);
+
+      // if needed, wake up the pther one
+      if (global_counter_value_)
+      {
+        condvar_.notify_one();
+      }
+    }
+  }
+
+  /*
   void Produce()
   {
     while (true)
     {
-      producer_snapshot_counter_value_ = global_counter_value_;
+      // producer_snapshot_counter_value_ = global_counter_value_;
       if (producer_snapshot_counter_value_ == N)
       {
         std::unique_lock<std::mutex> l(mutex_);
@@ -73,20 +99,45 @@ class PCDeadlockSimulator {
         condvar_.wait(l);
       }
       ++global_counter_value_;
-      spdlog::info("Producer increment");
       producer_snapshot_counter_value_ = global_counter_value_;
+      spdlog::info("Producer incremented; {}", producer_snapshot_counter_value_);
       if (producer_snapshot_counter_value_)
+      {
+        condvar_.notify_one();
+      }
+    }
+    }*/
+
+  void ConsumeSafe()
+  {
+    while (true)
+    {
+      // no data -> sleep
+      if (global_counter_value_ == 0)
+      {
+        std::unique_lock <std::mutex>l(mutex_);
+        condvar_.wait(l);
+      }
+
+      // process shared data
+      --global_counter_value_;
+      spdlog::info("consumer decremented {}", global_counter_value_);
+
+      // if needed wake up the other one
+      if (global_counter_value_ == N - 1)
       {
         condvar_.notify_one();
       }
     }
   }
 
+  /*
   void Consume()
   {
     while (true)
     {
-      consumer_snapshot_counter_value_ = global_counter_value_;
+
+      // consumer_snapshot_counter_value_ = global_counter_value_;
       if (consumer_snapshot_counter_value_ == 0)
       {
         std::this_thread::yield();
@@ -95,17 +146,27 @@ class PCDeadlockSimulator {
         condvar_.wait(l);
       }
       --global_counter_value_;
-      spdlog::info("Consumer decrement");
       consumer_snapshot_counter_value_ = global_counter_value_;
+      spdlog::info("Consumer decremented {}", consumer_snapshot_counter_value_);
       if (consumer_snapshot_counter_value_ == N - 1)
       {
         condvar_.notify_one();
       }
+
     }
   }
+  */
 
   void Observe()
   {
+    /* - this code makes sense when we record
+     * the vaues of what producer and consumer
+     * read; but there is a propblem with that
+     * approach - producer and consumer have
+     * different cached values, such that
+     * their difference is not 1 */
+
+    /*
     std::ofstream watcher_log("counter_values", std::ios::out);
 
     while (!(producer_snapshot_counter_value_ == N
@@ -114,16 +175,9 @@ class PCDeadlockSimulator {
       watcher_log << producer_snapshot_counter_value_ << ' ' <<
           consumer_snapshot_counter_value_ << std::endl;
 
-    spdlog::critical("Deadlock detected. Blocking call...");
-
-    {
-      char c;
-      std::cin >> c;
-      std::ofstream fs("dump", std::ios::out);
-      fs << "Deadlock detected!" << std::endl;
-    }
-
+    spdlog::critical("Deadlock detected. Returning...");
     return;
+    */
   }
 };
 
