@@ -32,7 +32,6 @@
  */
 
 #define N 10
-int count = 0;
 
 /**
    try this and examine compiler messages
@@ -46,7 +45,7 @@ class PCDeadlockSimulator {
     std::vector <std::thread> threads(3);
     threads[0] = std::thread(&PCDeadlockSimulator::Produce, this);
     threads[1] = std::thread(&PCDeadlockSimulator::Consume, this);
-    threads[2] = std::thread(&PCDeadlockSimulator::Observe, this);
+    //threads[2] = std::thread(&PCDeadlockSimulator::Observe, this);
 
     for (auto& thread: threads)
     {
@@ -57,23 +56,24 @@ class PCDeadlockSimulator {
  private:
   std::condition_variable condvar_;
   std::mutex mutex_;
-  std::atomic_bool flag_;
-  int producer_snapshot_counter_value_;
-  int consumer_snapshot_counter_value_;
-  int global_counter_value_;
+  std::atomic_bool flag_{false};
+  int producer_snapshot_counter_value_{0};
+  int consumer_snapshot_counter_value_{0};
+  int global_counter_value_{0};
 
   void Produce()
   {
-    spdlog::info("producer is running");
     while (true)
     {
       producer_snapshot_counter_value_ = global_counter_value_;
       if (producer_snapshot_counter_value_ == N)
       {
         std::unique_lock<std::mutex> l(mutex_);
+        spdlog::info("producer is waiting");
         condvar_.wait(l);
       }
       ++global_counter_value_;
+      spdlog::info("Producer increment");
       producer_snapshot_counter_value_ = global_counter_value_;
       if (producer_snapshot_counter_value_)
       {
@@ -89,10 +89,13 @@ class PCDeadlockSimulator {
       consumer_snapshot_counter_value_ = global_counter_value_;
       if (consumer_snapshot_counter_value_ == 0)
       {
+        std::this_thread::yield();
+        spdlog::info("consumer yielded and is waitin");
         std::unique_lock<std::mutex> l(mutex_);
         condvar_.wait(l);
       }
       --global_counter_value_;
+      spdlog::info("Consumer decrement");
       consumer_snapshot_counter_value_ = global_counter_value_;
       if (consumer_snapshot_counter_value_ == N - 1)
       {
@@ -103,17 +106,24 @@ class PCDeadlockSimulator {
 
   void Observe()
   {
-    while (true)
-    {
-      spdlog::info("observer is running");
+    std::ofstream watcher_log("counter_values", std::ios::out);
 
-      if (producer_snapshot_counter_value_ == N
+    while (!(producer_snapshot_counter_value_ == N
           &&
-          consumer_snapshot_counter_value_ == 0)
-      {
-        std::cout << "Deadlock detected. Shutting down..." << std::endl;
-      }
+          consumer_snapshot_counter_value_ == 0))
+      watcher_log << producer_snapshot_counter_value_ << ' ' <<
+          consumer_snapshot_counter_value_ << std::endl;
+
+    spdlog::critical("Deadlock detected. Blocking call...");
+
+    {
+      char c;
+      std::cin >> c;
+      std::ofstream fs("dump", std::ios::out);
+      fs << "Deadlock detected!" << std::endl;
     }
+
+    return;
   }
 };
 
