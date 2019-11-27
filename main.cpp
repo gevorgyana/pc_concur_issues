@@ -43,7 +43,6 @@ class PCDeadlockSimulator {
  public:
   void Run()
   {
-
     std::vector <std::thread> threads(3);
     threads[0] = std::thread(&PCDeadlockSimulator::Produce, this);
     threads[1] = std::thread(&PCDeadlockSimulator::Consume, this);
@@ -68,8 +67,6 @@ class PCDeadlockSimulator {
     spdlog::info("producer is running");
     while (true)
     {
-
-
       producer_snapshot_counter_value_ = global_counter_value_;
       if (producer_snapshot_counter_value_ == N)
       {
@@ -126,4 +123,7 @@ void tst1_app_runs() {
 
 int main()
 {
+  PCDeadlockSimulator simulator;
+  simulator.Run();
+  return 0;
 }
