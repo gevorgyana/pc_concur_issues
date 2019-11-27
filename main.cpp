@@ -59,9 +59,7 @@ class PCDeadlockSimulator {
   std::condition_variable condvar_;
   std::mutex mutex_;
   std::atomic_bool flag_{false};
-  int producer_snapshot_counter_value_{0};
-  int consumer_snapshot_counter_value_{0};
-  int global_counter_value_{0};
+  std::atomic<int> global_counter_value_{0};
 
   void ProduceSafe()
   {
@@ -75,8 +73,8 @@ class PCDeadlockSimulator {
       }
 
       // process shared data
-      ++global_counter_value_;
-      spdlog::info("producer incremented {}", global_counter_value_);
+      int prev = global_counter_value_++;
+      spdlog::info("producer incremented {} -> {}", prev, global_counter_value_);
 
       // if needed, wake up the pther one
       if (global_counter_value_)
@@ -85,28 +83,6 @@ class PCDeadlockSimulator {
       }
     }
   }
-
-  /*
-  void Produce()
-  {
-    while (true)
-    {
-      // producer_snapshot_counter_value_ = global_counter_value_;
-      if (producer_snapshot_counter_value_ == N)
-      {
-        std::unique_lock<std::mutex> l(mutex_);
-        spdlog::info("producer is waiting");
-        condvar_.wait(l);
-      }
-      ++global_counter_value_;
-      producer_snapshot_counter_value_ = global_counter_value_;
-      spdlog::info("Producer incremented; {}", producer_snapshot_counter_value_);
-      if (producer_snapshot_counter_value_)
-      {
-        condvar_.notify_one();
-      }
-    }
-    }*/
 
   void ConsumeSafe()
   {
@@ -120,8 +96,8 @@ class PCDeadlockSimulator {
       }
 
       // process shared data
-      --global_counter_value_;
-      spdlog::info("consumer decremented {}", global_counter_value_);
+      int prev = global_counter_value_--;
+      spdlog::info("consumer decremented {} -> {}", prev, global_counter_value_);
 
       // if needed wake up the other one
       if (global_counter_value_ == N - 1)
@@ -130,60 +106,7 @@ class PCDeadlockSimulator {
       }
     }
   }
-
-  /*
-  void Consume()
-  {
-    while (true)
-    {
-
-      // consumer_snapshot_counter_value_ = global_counter_value_;
-      if (consumer_snapshot_counter_value_ == 0)
-      {
-        std::this_thread::yield();
-        spdlog::info("consumer yielded and is waitin");
-        std::unique_lock<std::mutex> l(mutex_);
-        condvar_.wait(l);
-      }
-      --global_counter_value_;
-      consumer_snapshot_counter_value_ = global_counter_value_;
-      spdlog::info("Consumer decremented {}", consumer_snapshot_counter_value_);
-      if (consumer_snapshot_counter_value_ == N - 1)
-      {
-        condvar_.notify_one();
-      }
-
-    }
-  }
-  */
-
-  void Observe()
-  {
-    /* - this code makes sense when we record
-     * the vaues of what producer and consumer
-     * read; but there is a propblem with that
-     * approach - producer and consumer have
-     * different cached values, such that
-     * their difference is not 1 */
-
-    /*
-    std::ofstream watcher_log("counter_values", std::ios::out);
-
-    while (!(producer_snapshot_counter_value_ == N
-          &&
-          consumer_snapshot_counter_value_ == 0))
-      watcher_log << producer_snapshot_counter_value_ << ' ' <<
-          consumer_snapshot_counter_value_ << std::endl;
-
-    spdlog::critical("Deadlock detected. Returning...");
-    return;
-    */
-  }
 };
-
-void tst1_app_runs() {
-  PCDeadlockSimulator simulator;
-}
 
 int main()
 {
