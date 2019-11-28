@@ -4,10 +4,7 @@
 
 #define N 10
 
-// modify the code to enable strict alternation
-// changes from the original problem:
-// - need cached values
-// - they do not have to be atomic? TODO
+// TODO modify the code to enable strict alternation
 
 class S
 {
@@ -26,17 +23,35 @@ class S
   std::atomic<int> gc_{0}; int cc_{0}, pc_{0};
   std::mutex mut_, c_mut_;
   std::condition_variable cv_;
+  // alternation flag
+  std::atomic<bool> af_{false};
 
   void P()
   {
     while (true)
     {
+      af_ = false;
+
       // if needed to go sleep
-      if (gc_ == N)
       {
         std::unique_lock<std::mutex> l(mut_);
-        cv_.wait(l);
+        if (gc_ == N)
+        {
+          spdlog::warn("entered critival region cv producer");
+
+          while (af_)
+          {
+            using namespace std::literals::chrono_literals;
+            std::this_thread::sleep_for(2s);
+            spdlog::warn("Pxc");
+            std::this_thread::yield();
+          }
+          af_ = true;
+          cv_.wait(l);
+          af_ = false;
+        }
       }
+
 
       // process shared data
       {
@@ -61,10 +76,24 @@ class S
     while (true)
     {
       // no data -> sleep
-      if (gc_ == 0)
+      af_ = false;
+
       {
         std::unique_lock <std::mutex>l(mut_);
-        cv_.wait(l);
+        if (gc_ == 0)
+        {
+          spdlog::warn("entered critival region cv consumer");
+          while (af_)
+          {
+            using namespace std::literals::chrono_literals;
+            std::this_thread::sleep_for(2s);
+            spdlog::warn("C");
+            std::this_thread::yield();
+          }
+          af_ = true;
+          cv_.wait(l);
+          af_ = false;
+        }
       }
 
 

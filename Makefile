@@ -1,6 +1,6 @@
 .PHONY: all clean run fast
 
-main_restricted.o:
+main_restricted.o: clean
 	g++ -c -Wall -g main_restricted.cpp -I./spdlog/include -o main_restricted.o
 	g++ -g -o restricted main_restricted.o  -pthread
 
