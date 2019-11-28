@@ -2,9 +2,11 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 
+// the following code also has race conditions!!!
+
 #define N 10
 
-// TODO modify the code to enable strict alternation
+// TODO strict allternation!!!!!
 
 class S
 {
@@ -24,31 +26,32 @@ class S
   std::mutex mut_, c_mut_;
   std::condition_variable cv_;
   // alternation flag
-  std::atomic<bool> af_{false};
+  std::atomic<bool> producer_asleep_{false},
+    consumer_asleep_{false};
 
   void P()
   {
     while (true)
     {
-      af_ = false;
 
       // if needed to go sleep
       {
         std::unique_lock<std::mutex> l(mut_);
         if (gc_ == N)
         {
-          spdlog::warn("entered critival region cv producer");
-
-          while (af_)
+          while (consumer_asleep_)
           {
-            using namespace std::literals::chrono_literals;
-            std::this_thread::sleep_for(2s);
-            spdlog::warn("Pxc");
-            std::this_thread::yield();
+            spdlog::warn("producer yields");
+            //std::this_thread::yield();
           }
-          af_ = true;
+
+          // context switch -> and consumer is now asleep!
+          // this is a wrong solution DONE
+
+          producer_asleep_ = true;
+          spdlog::warn("producer is about to wait");
           cv_.wait(l);
-          af_ = false;
+          producer_asleep_ = false;
         }
       }
 
@@ -75,24 +78,21 @@ class S
   {
     while (true)
     {
-      // no data -> sleep
-      af_ = false;
 
+      // no data -> sleep
       {
         std::unique_lock <std::mutex>l(mut_);
         if (gc_ == 0)
         {
-          spdlog::warn("entered critival region cv consumer");
-          while (af_)
+          while (producer_asleep_)
           {
-            using namespace std::literals::chrono_literals;
-            std::this_thread::sleep_for(2s);
-            spdlog::warn("C");
-            std::this_thread::yield();
+            spdlog::warn("consumer about to yield");
+            //std::this_thread::yield();
           }
-          af_ = true;
+          consumer_asleep_ = true;
+          spdlog::warn("consumer is going to wait");
           cv_.wait(l);
-          af_ = false;
+          consumer_asleep_ = false;
         }
       }
 
