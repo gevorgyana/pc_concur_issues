@@ -6,7 +6,8 @@
 
 #define N 10
 
-// TODO strict allternation!!!!!
+// TODO strict allternation!!!!! - even with strict alternation,
+// this is useless as there may be no progress DONE
 
 class S
 {
