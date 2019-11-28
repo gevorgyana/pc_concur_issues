@@ -68,13 +68,80 @@ class PCDeadlockSimulator {
     }
   }
 
+  /**
+   * Пока что остановился на двух вариантах.
+   * 1 - не нужен никакой третий наблюдатель,
+   * можно разрешать дедлок самостоятельно каждым из
+   * рабочих потоков. - здесь только 2 потока, поэтому так можно,
+   * можно ли развить это на много потоков?
+
+   * +) можно просто сделать так, чтобы ожидать мог только один -
+   * но это сильно ограничивает - тоже не вариант
+
+   * 2 - надо захватить мутекс и "сфотографировать", что происходит
+   * со счетчиками рабочих потоков. Можно оптимизировать - сделать так,
+   * чтобы он триггерили проверяльщика, но 1) всe равно есть race condition,
+   * 2) если нельзя вмешиваться в код рабочих потоков, то этот вариант не под-
+   * ходит.
+
+   * Остается такой вариант: сделать работу со счетчиками атомарной,
+   * кешировать их значения в каждом потоке. (хотя
+   * это тоже значит менять код потоков из классичекой задачи)
+   * Но если так сделать, то можно по мутексу блокировать обновление
+   * любого потка и проверять кондишен, который приведет к дедлоку.
+   * проблема такого подхода - тоже можно сделать race condition -
+   * если проверялтщик недостаточно часто будет работать, то это будет очнь вероятно.
+   * например, он будет выполняться на одном ядре с остальными, и тогда в определенные
+   * моменты просто не будет работать. взаимодействовать будут просто 2 остальных потока,
+   * без проверяльщика.
+
+   * => непонятно, как гарантированно найти способ наблюдать за дедлоком
+   *
+   * Придется менять код самих потоков, если надо гарантировать нахождение дедлока.
+   * Можно было бы запретить спать двум одновременно. Но логика моего подхода в том,
+   * что мы берем минимально возможный шаг, который мы можем контроллировать, и который
+   * по идее **может** привести к дедлоку - и устраняем его. Просто не даем системе дальше
+   * продвинуться, пока не произойдет остабление ситуации.
+
+   * TODO - здесь тоже race condition!???? - да, но он не мешает
+   * producer:
+   *  { // works with data
+   *    while (one_has_not_finished_sleeping) - race - если мы не успели сказать,что мы уже не спим,
+   * в данном случае ничего не произойдет, рано или поздно другой поток это сделает, и мы продолжим
+          {
+            ;
+          }
+
+        теперь мы захватываем флаг, и делаем "спатки"
+        когда закончили спать, освобождаем флаг.
+        это называется StTRICT ALTERNATION - работает только для
+        двух потоков. Если коротко, делать strict alternation по операции seep.
+        Если больше потоков, нвдо делать critical section по sleep, либо
+        решать задач с помощью семафоров, поскольку там не теряется сигнал.
+   *  }
+
+   * consumer:
+   *  [same as above]
+
+   * Итого: непонятно, что должно работать!!! Как полностью контроллировать
+   * дедлок? Если только 2 потока, то +- можно это делать, хотя strict alternaion
+   * не самый лучший варант - много времени будет на бизи-вейтинг - ну тут хотя бы
+   * можно сделать yield
+
+   * В общем случае: как наблюдать/разрешать - вообще неясно (это и для слуая их 2х потоков сложно
+   * сделать), сторонний поток не может при каждом шаге заморозить всех остальных - хотя если сипользовать
+   * yield, то может и может? TODO. Ну если 3+, то при условии, что а) мы можем заморозить состояние системы
+   * и посмотреть, что с каждым счетчиком и б) что можно заставить каждый поток не выполняться, (например,
+   * с помощью yield), пока не отработает проверяльщик - все нормально должно работать
+   */
+
  private:
   std::condition_variable condvar_;
   std::mutex mutex_;
-  bool consumed_,
-    produced_;
-  std::atomic<int> global_counter_value_{0},
-    consumer_snap_counter_{0},
+  bool consumer_sleep_request_,
+    producer_sleep_request_;
+  std::atomic<int> global_counter_value_{0};
+  int consumer_snap_counter_{0},
     producer_snap_counter_{0};
   std::mutex counter_access_mutex_;
 
@@ -94,13 +161,10 @@ class PCDeadlockSimulator {
         std::unique_lock<std::mutex> l(counter_access_mutex_);
         int prev = global_counter_value_++;
         producer_snap_counter_ = global_counter_value_;
-        //produced_ |= true;
         spdlog::info("producer incremented {} -> {}", prev, global_counter_value_);
       }
 
       // if needed, wake up the other one
-
-      std::unique_lock<std::mutex> l(counter_access_mutex_);
       if (global_counter_value_ == 1)
       {
         condvar_.notify_one();
@@ -115,8 +179,6 @@ class PCDeadlockSimulator {
     while (true)
     {
       // no data -> sleep
-
-      std::unique_lock<std::mutex> l(counter_access_mutex_);
       if (global_counter_value_ == 0)
       {
         std::unique_lock <std::mutex>l(mutex_);
@@ -129,13 +191,11 @@ class PCDeadlockSimulator {
         std::unique_lock<std::mutex> l(counter_access_mutex_);
         int prev = global_counter_value_--;
         consumer_snap_counter_ = global_counter_value_;
-        //consumed_ |= true;
         spdlog::info("consumer decremented {} -> {}", prev, global_counter_value_);
       }
 
       // if needed wake up the other one
 
-      std::unique_lock<std::mutex> l(counter_access_mutex_);
       if (global_counter_value_ == N - 1)
       {
         condvar_.notify_one();
@@ -147,26 +207,7 @@ class PCDeadlockSimulator {
   void Observe()
   {
     // TODO native handle cppref to terminate threads - unix only - compiler defined option
-    while (true)
-    {
 
-      // проблема: как сделать так, чтобы одновременно получить доступ к двум
-      // переменным. вероятно, проблема в этом, и не нужны флаги.
-      if ((producer_snap_counter_ != N || consumer_snap_counter_ != 0) /*||
-          !(produced_ && consumed_)*/)
-      {
-        spdlog::info("blank shot");
-        // small optimization
-        std::this_thread::yield();
-        continue;
-      }
-
-      else
-        break;
-
-    }
-
-    spdlog::critical("deadlock detected");
     return;
   }
 };
