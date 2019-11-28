@@ -7,7 +7,9 @@
 #define N 10
 
 // TODO strict allternation!!!!! - even with strict alternation,
-// this is useless as there may be no progress DONE
+// this is useless as there may be no progress done
+
+// почему? должно все лочиться. почему?????
 
 class S
 {
@@ -34,10 +36,9 @@ class S
   {
     while (true)
     {
-
+      std::unique_lock<std::mutex> l(mut_);
       // if needed to go sleep
       {
-        std::unique_lock<std::mutex> l(mut_);
         if (gc_ == N)
         {
           while (consumer_asleep_)
@@ -54,24 +55,18 @@ class S
           cv_.wait(l);
           producer_asleep_ = false;
         }
-      }
 
-
-      // process shared data
-      {
-        std::unique_lock<std::mutex> l(c_mut_);
+        // process shared data
         int prev = gc_++;
         pc_ = gc_;
         spdlog::info("producer incremented {} -> {}", prev, gc_);
+
+        // if needed, wake up the other one
+        if (gc_ == 1)
+        {
+          cv_.notify_one();
+        }
       }
-
-      // if needed, wake up the other one
-      if (gc_ == 1)
-      {
-        cv_.notify_one();
-      }
-
-
     }
   }
 
@@ -79,10 +74,9 @@ class S
   {
     while (true)
     {
-
+      std::unique_lock <std::mutex>l(mut_);
       // no data -> sleep
       {
-        std::unique_lock <std::mutex>l(mut_);
         if (gc_ == 0)
         {
           while (producer_asleep_)
@@ -95,24 +89,18 @@ class S
           cv_.wait(l);
           consumer_asleep_ = false;
         }
-      }
 
-
-      // process shared data
-      {
-        std::unique_lock<std::mutex> l(c_mut_);
+        // process shared data
         int prev = gc_--;
         cc_ = gc_;
         spdlog::info("consumer decremented {} -> {}", prev, gc_);
+
+        // if needed wake up the other one
+        if (gc_ == N - 1)
+        {
+          cv_.notify_one();
+        }
       }
-
-      // if needed wake up the other one
-
-      if (gc_ == N - 1)
-      {
-        cv_.notify_one();
-      }
-
     }
   }
 
