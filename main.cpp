@@ -33,6 +33,7 @@ class PCDeadlockSimulator {
   }
 
  private:
+
   std::vector<std::thread> threads_;
 
   std::condition_variable sleep_wakeup_condvar_;
@@ -41,6 +42,8 @@ class PCDeadlockSimulator {
   int global_counter_value_{0};
   int producer_counter_cached{0};
   int consumer_counter_cached{0};
+
+  int numops = 0;
 
   std::mutex data_protection_mutex_;
 
@@ -63,6 +66,8 @@ class PCDeadlockSimulator {
                      global_counter_value_);
 
         producer_counter_cached = global_counter_value_;
+
+        ++numops;
       }
 
       if (global_counter_value_ == 1)
@@ -91,6 +96,8 @@ class PCDeadlockSimulator {
                      global_counter_value_);
 
         consumer_counter_cached = global_counter_value_;
+
+        ++numops;
       }
 
       if (global_counter_value_ == N - 1)
@@ -100,24 +107,20 @@ class PCDeadlockSimulator {
     }
   }
 
-  // this gives false positives ???
-  void Observe()
-  {
-    while (true)
-    {
+  void Observe() {
+
+    int cached_numops = 0;
+    while (true) {
       std::this_thread::sleep_for(1s);
-      spdlog::warn("P: {}, C: {}", producer_counter_cached, consumer_counter_cached);
-      if (consumer_counter_cached == 0 && producer_counter_cached == N)
-      {
-        spdlog::critical("Deadlock detected...");
-        // https://gcc.gnu.org/ml/gcc-help/2015-08/msg00040.html
-        // pthread_cancel does not behave very well, if we call it on
-        // the native handle of a c++ thread -> leave the threads hanging
+      cached_numops = numops;
+      if (numops == cached_numops) {
+        spdlog::error("DEADLOCK DETECTED");
         break;
       }
     }
-    return;
+
   }
+
 };
 
 int main()
